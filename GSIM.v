@@ -15,15 +15,13 @@ module GSIM ( clk, reset, in_en, b_in, out_valid, x_out);
     // 48bit reg，小數點 at bit 24
     reg signed [47:0] b_reg [1:N];
     reg signed [47:0] x_reg [1:N];
-    reg signed [47:0] x_reg_old [1:N];
     reg signed [47:0] sum;
     reg [31:0] x_out_reg;
     reg [1:0] state, next_state;
     reg out_valid_reg;
     reg [4:0] count;
-    reg [9:0] iter_count;
+    reg [7:0] iter_count;
     reg [4:0] compute_idx;
-    reg init_done;
 
     assign x_out = x_out_reg;
     assign out_valid = out_valid_reg;
@@ -51,22 +49,15 @@ module GSIM ( clk, reset, in_en, b_in, out_valid, x_out);
             for (i = 1; i <= N; i = i + 1) begin
                 b_reg[i] <= 48'b0;
                 x_reg[i] <= 48'b0;
-                x_reg_old[i] <= 48'b0;
             end
             out_valid_reg <= 1'b0;
             x_out_reg <= 32'b0;
             count <= 0;
             iter_count <= 0;
             compute_idx <= 0;
-            init_done <= 0;
         end else begin
             case(state)
                 IDLE: begin
-                    out_valid_reg <= 1'b0;
-                    iter_count <= 0;
-                    count <= 0;
-                    compute_idx <= 0;
-                    init_done <= 0;
                     if(in_en) begin
                         b_reg[16] <= {{8{b_in[15]}} ,b_in, 24'b0}; // 16位整數左移32位，對齊48bit小數點24位
                         count <= 1;
@@ -81,10 +72,7 @@ module GSIM ( clk, reset, in_en, b_in, out_valid, x_out);
                     end
                 end
                 COMPUTE: begin
-                    if (iter_count == 0 && !init_done) begin
-                        for (i = 1; i <= N; i = i + 1)
-                            x_reg[i] <= div_20(b_reg[i]);
-                        init_done <= 1;
+                    if (iter_count == 0) begin
                         iter_count <= 1;
                         compute_idx <= 1;
                     end else if (compute_idx <= N) begin
@@ -96,16 +84,14 @@ module GSIM ( clk, reset, in_en, b_in, out_valid, x_out);
                         if (compute_idx > 1)
                             sum = sum - mul_neg13(x_reg[compute_idx-1]);
                         if (compute_idx < N)
-                            sum = sum - mul_neg13(x_reg_old[compute_idx+1]);
+                            sum = sum - mul_neg13(x_reg[compute_idx+1]);
                         if (compute_idx < N-1)
-                            sum = sum - mul_6(x_reg_old[compute_idx+2]);
+                            sum = sum - mul_6(x_reg[compute_idx+2]);
                         if (compute_idx < N-2)
-                            sum = sum + x_reg_old[compute_idx+3];
+                            sum = sum + x_reg[compute_idx+3];
                         x_reg[compute_idx] <= div_20(sum);
                         compute_idx <= compute_idx + 1;
                     end else begin
-                        for (i = 1; i <= N; i = i + 1)
-                            x_reg_old[i] <= x_reg[i];
                         compute_idx <= 1;
                         iter_count <= iter_count + 1;
                         if (iter_count + 1 >= MAX_ITER) begin
