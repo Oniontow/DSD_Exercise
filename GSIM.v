@@ -8,19 +8,19 @@ module GSIM ( clk, reset, in_en, b_in, out_valid, x_out);
 
     integer i;
     localparam N = 16;
-    localparam MAX_ITER = 100;
+    localparam MAX_ITER = 75;
 
     localparam IDLE = 2'd0, INPUT = 2'd1, COMPUTE = 2'd2, OUTPUT = 2'd3;
 
     // 48bit reg，小數點 at bit 24
-    reg signed [47:0] b_reg [1:N];
+    reg signed [15:0] b_reg [1:N];
     reg signed [47:0] x_reg [1:N];
     reg signed [47:0] sum;
     reg [31:0] x_out_reg;
     reg [1:0] state, next_state;
     reg out_valid_reg;
     reg [4:0] count;
-    reg [7:0] iter_count;
+    reg [6:0] iter_count;
     reg [4:0] compute_idx;
 
     assign x_out = x_out_reg;
@@ -54,12 +54,11 @@ module GSIM ( clk, reset, in_en, b_in, out_valid, x_out);
             x_out_reg <= 32'b0;
             count <= 0;
             iter_count <= 0;
-            compute_idx <= 0;
         end else begin
             case(state)
                 IDLE: begin
                     if(in_en) begin
-                        b_reg[16] <= {{8{b_in[15]}} ,b_in, 24'b0}; // 16位整數左移32位，對齊48bit小數點24位
+                        b_reg[16] <= b_in; // 16位整數左移24位，對齊48bit小數點24位
                         count <= 1;
                     end
                 end
@@ -67,7 +66,7 @@ module GSIM ( clk, reset, in_en, b_in, out_valid, x_out);
                     if (in_en) begin
                         for (i = 1; i < N; i = i + 1)
                             b_reg[i] <= b_reg[i+1];
-                        b_reg[N] <= { {8{b_in[15]}} , b_in , 24'b0 }; // 16bit sign-extend, shift left 24
+                        b_reg[N] <= b_in; // 16bit sign-extend, shift left 24
                         count <= count + 1;
                     end
                 end
@@ -75,8 +74,9 @@ module GSIM ( clk, reset, in_en, b_in, out_valid, x_out);
                     if (iter_count == 0) begin
                         iter_count <= 1;
                         compute_idx <= 1;
+                        count <= 0;
                     end else if (compute_idx <= N) begin
-                        sum = b_reg[compute_idx];
+                        sum = {{8{b_reg[compute_idx][15]}} ,b_reg[compute_idx], 24'b0};
                         if (compute_idx > 3)
                             sum = sum + x_reg[compute_idx-3];
                         if (compute_idx > 2)
@@ -90,12 +90,11 @@ module GSIM ( clk, reset, in_en, b_in, out_valid, x_out);
                         if (compute_idx < N-2)
                             sum = sum + x_reg[compute_idx+3];
                         x_reg[compute_idx] <= div_20(sum);
-                        compute_idx <= compute_idx + 1;
-                    end else begin
-                        compute_idx <= 1;
-                        iter_count <= iter_count + 1;
-                        if (iter_count + 1 >= MAX_ITER) begin
-                            count <= 0;
+                        if (compute_idx < N)
+                            compute_idx <= compute_idx + 1;
+                        else begin
+                            compute_idx <= 1;
+                            iter_count <= iter_count + 1;
                         end
                     end
                 end
